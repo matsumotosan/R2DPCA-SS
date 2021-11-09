@@ -7,7 +7,7 @@ import numpy as np
 import matplotlib.pyplot as plt
 from sklearn.decomposition import PCA, SparsePCA
 from PIL import Image
-import SSR2DPCA
+import SSRR2DPCA
 from plotter import *
 
 # Load data
@@ -39,7 +39,7 @@ pca_sv = pca.singular_values_
 # Fit model to data using SSR-2D-PCA
 r = 10
 c = 8
-ssr2dpca = SSR2DPCA.SSR2DPCA(n_components_x=r, n_components_y=c)
+ssr2dpca = SSRR2DPCA.SSRR2DPCA(n_components_x=r, n_components_y=c)
 X_r_ssr2dpca = ssr2dpca.fit_transform(images_2d)
 ssr2dpca_pc = pca.components_
 ssr2dpca_var = pca.explained_variance_

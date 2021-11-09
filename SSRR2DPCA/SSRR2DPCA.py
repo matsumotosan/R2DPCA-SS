@@ -124,9 +124,9 @@ def has_converged():
     return False
 
 
-class SSR2DPCA:
+class SSRR2DPCA:
     """Structured sparsity regularized robust 2D principal component
-    analysis (SSR-2D-PCA).
+    analysis (SSR-R2D-PCA).
 
     Dimensionality reduction technique based on the algorithm detailed in
     "Robust 2D principal component analysis: A structured sparsity regularized

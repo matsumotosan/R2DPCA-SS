@@ -29,3 +29,6 @@ plt.savefig("./figures/yalefaces.png", bbox_inces="tight", dpi=200)
 plt.show()
 
 # Generate corrupted images
+# TODO : Function to generate images with uniform occlusions (pixels black or white)
+# TODO : Function to generate images with white noise
+# TODO : Generate occluded images to be used in experiments

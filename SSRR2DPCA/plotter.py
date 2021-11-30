@@ -1,6 +1,9 @@
 import numpy as np
 import matplotlib.pyplot as plt
 
+# TODO : Helper to plot singular value profiles
+# TODO : Helper to plot explained variance ratio
+# TODO : Helper to plot comparison of occluded images and their reconstructions with different methods
 
 def plot_singular_values(s, filename, title):
     """Helper function for plotting singular values

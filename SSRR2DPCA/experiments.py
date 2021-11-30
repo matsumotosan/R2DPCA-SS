@@ -11,6 +11,19 @@ from PIL import Image
 from SSRR2DPCA import SSRR2DPCA, ssrr2dpca
 from plotter import *
 
+
+def psnr(X, Xhat):
+    """Calculate PSNR"""
+    m, n = X.shape()
+    return 10 * np.log((255 ** 2 * m * n) / (np.linalg.norm(X - Xhat, ord="fro") ** 2))
+
+
+def ssim():
+    """Calculate SSIM"""
+    # TODO : Calculate SSIM
+    return None
+
+
 # Load data
 image_dir = "./datasets/yalefaces/subject*.*"
 files = glob.glob(image_dir)

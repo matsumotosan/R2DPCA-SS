@@ -1,17 +1,18 @@
 """Structured sparsity regularized robust 2D principal component analysis."""
 
-# Authors: Shion Matsumoto   <matsumos@med.umich.edu>
+# Authors: Shion Matsumoto   <matsumos@umich.edu>
 #          Rohan Sinha Varma <rsvarma@umich.edu>
 #          Marcus Koenig     <marcusko@umich.edu>
 #          Yaning Zhang      <yaningzh@umich.edu>
 
 import numpy as np
+import spams
 from scipy import linalg
 from scipy.linalg import eig, svd, svdvals
 from sklearn.preprocessing import MinMaxScaler
 
 
-def iterBDD(X, E, U, V, tol=1e-3, max_iter=1000):
+def iterBDD(X, E, U, V, r, c, tol, max_iter):
     """Iterative bi-directional decomposition.
 
     Step 1 of the two-stage alternating minimization algorithm for the
@@ -20,10 +21,10 @@ def iterBDD(X, E, U, V, tol=1e-3, max_iter=1000):
 
     Parameters
     ----------
-    X : array, shape (n_samples, n_features_y, n_features_x)
+    X : array, shape (n_samples, m, n)
         Data
 
-    E : array, shape (n_samples, n_features_y, n_features_x)
+    E : array, shape (n_samples, m, n)
         Structured sparse matrices. If none provided, set to E = 0_(m, n) as stated by Sun et al. (2015)
 
     U : array, shape(U)
@@ -34,39 +35,50 @@ def iterBDD(X, E, U, V, tol=1e-3, max_iter=1000):
         Initial right projection matrix. If none provided, set to V = [ I_(c,c) | 0_(c,n-c) ] as stated
         by Sun et al. (2015)
 
+    r : int
+        Row dimensionality reduction
+
+    c : int
+        Column dimensionality reduction
+
     tol : float
-        Tolerance criterion for convergence, default=1e-3
+        Tolerance criterion for convergence
 
     max_iter : int
-        Maximum number of iterations, default=1000
+        Maximum number of iterations
 
     Returns
     -------
-    U : array, shape ()
+    U : array, shape (m, r)
         Final left projection matrix
 
-    V : array, shape ()
+    V : array, shape (n, c)
         Final right projection matrix
     """
     ii = 0
     while ii < max_iter and ~has_converged():
         # Eigendecomposition of Cv
-        VVT = V @ V.T
+        VVT = V.dot(V.T)
         XE = X - E
-        Cv = np.einsum('ij,lkj->lik', VVT, XE)
-        Cv = np.mean(np.einsum('ijk,mkl->mil', XE, Cv), axis=0)
-        wv, u = eig(Cv, left=True)
+        Cv = np.einsum("ij,lkj->lik", VVT, XE)
+        Cv = np.mean(np.einsum("ijk,mkl->mil", XE, Cv), axis=0)
+        wu, _ = eig(Cv, left=True)
 
         # Eigendecomposition of Cu
         Cu = np.mean((X - E) @ U @ U.T @ (X - E).T, axis=2)
-        wu, U = eig(Cu, left=True)
+        wv, _ = eig(Cu, left=True)
 
+        # Update U and V
+        U = wu[:, :r]
+        V = wv[:, :c]
+
+        # Update iteration
         ii += 1
 
     return U, V
 
 
-def feature_outlier_extractor(X, U, V, E=None, tol=1e-3):
+def feature_outlier_extractor(X, U, V, E, tol, max_iter):
     """Feature matrix and structured outlier extraction.
 
     Step 2 of the two-stage alternating minimization algorithm for the
@@ -75,36 +87,42 @@ def feature_outlier_extractor(X, U, V, E=None, tol=1e-3):
 
     Parameters
     ----------
-    X : array, shape (nx, ny, n_samples)
+    X : array, shape (n_samples, m, n)
         Data
 
-    E : array, shape (nx, ny, n_samples)
+    E : array, shape (n_samples, m, n)
         Structured sparse matrices
 
-    U : array, shape ()
+    U : array, shape (r, r)
         Initial left projection matrix
 
-    V : array, shape ()
+    V : array, shape (c, c)
         Initial right projection matrix
 
     tol : float
-        Tolerance criterion for convergence, default=1e-3
+        Tolerance criterion for convergence
 
     Returns
     -------
-    S : array, shape (nx, ny, n_samples)
+    S : array, shape (n_samples, m, n)
         Feature matrix
 
-    E : array, shape (nx, ny, n_samples)
+    E : array, shape (n_samples, m, n)
         Structured sparse outliers matrix
     """
+    m, n = E.shape()
+    ii = 0
     while ii < max_iter and ~hasConvered():
         # Bi-directional projection
-        Si = U.T @ (X - E) @ V
+        S = U.T.dot((X - E).dot(V))
 
         # Proximal gradient method to solve structured sparsity regularized problem
-        Ei = prox(X - U @ Si @ V.T)
+        O = np.array([1])  # 3x3 neighboring grids
+        for i, s in enumerate(S):
+            e = spams.proximalFlat(X - U.dot(s.dot(V.T)), regul="elastic-net")
+            E[i] = e.reshape((m, n))
 
+        # Update iteration
         ii += 1
 
     return S, E
@@ -124,6 +142,40 @@ def has_converged():
     return False
 
 
+def ssrr2dpca(X, scale):
+    """Structured sparsity regularized robust 2D principal component
+    analysis (SSR-R2D-PCA).
+    """
+    X = X.astype(float)
+
+    # Get dimensions of data (following notations of paper)
+    T, m, n = np.shape(X)
+
+    # # Scale values to lie within [0,1]
+    # X_scaled = MinMaxScaler().fit_transform(X, )
+
+    # Center data
+    X -= X.mean(axis=0)
+
+    # Calculate dimension reduction parameters
+    r = m / scale
+    c = n / scale
+
+    # Initialize projection and structured sparse matrices
+    U = np.vstack((np.eye(r, r), np.zeros((m - r, r))))  # shape(U) = (m,r)
+    V = np.vstack((np.eye(c, c), np.zeros((n - c, c))))  # shape(V) = (n,c)
+    E = np.tile((np.zeros((1, m, n))), (T, 1, 1))
+
+    # Get left and right projection matrices
+    l = 1 / np.sqrt(m * n)
+    U, V = iterBDD(X, E, U, V, r, c)
+
+    # Get feature matrix and structured outliers
+    S, E = feature_outlier_extractor(X, U, V, tol=1e-3)
+
+    return U, V, S, E
+
+
 class SSRR2DPCA:
     """Structured sparsity regularized robust 2D principal component
     analysis (SSR-R2D-PCA).
@@ -140,7 +192,7 @@ class SSRR2DPCA:
         Number of principal components
 
     l : float
-        Sparsity regularization term, default value of (nx times ny)
+        Sparsity regularization term
 
     b : array, shape (n_components)
         Structured sparsity regularization term, default value of l when w=1
@@ -189,9 +241,9 @@ class SSRR2DPCA:
     ISSN:10577149.DOI:10.1109/TIP.2015.2419075.
     """
 
-    def __init__(self, n_components_x, n_components_y, lam=None, beta=None):
-        self.n_components_x_ = n_components_x
-        self.n_components_y_ = n_components_y
+    def __init__(self, r=None, c=None, lam=None, beta=None):
+        self.r_ = r
+        self.c_ = c
         self.lam_ = lam
         self.beta_ = beta
         self.U_ = None
@@ -227,8 +279,8 @@ class SSRR2DPCA:
         X -= self.mean_
 
         # Initialize projection and structured sparse matrices
-        U = np.vstack((np.eye(r, r), np.zeros((m - r, r))))   # shape(U) = (m,r)
-        V = np.vstack((np.eye(c, c), np.zeros((n - c, c))))   # shape(V) = (n,c)
+        U = np.vstack((np.eye(r, r), np.zeros((m - r, r))))  # shape(U) = (m,r)
+        V = np.vstack((np.eye(c, c), np.zeros((n - c, c))))  # shape(V) = (n,c)
         E = np.tile((np.zeros((1, m, n))), (T, 1, 1))
 
         # Get left and right projection matrices

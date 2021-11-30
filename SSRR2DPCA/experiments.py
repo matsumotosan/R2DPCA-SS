@@ -17,7 +17,7 @@ files = glob.glob(image_dir)
 images = np.asarray([np.asarray(Image.open(f)) for f in files])
 n_images, m, n = np.shape(images)
 
-# Preprocessing
+# Vectorize images for PCA
 images_1d = images.reshape((n_images, m * n))  # 1D vectors for PCA, sparse PCA
 
 # Fit model to data using PCA
@@ -37,11 +37,6 @@ pca_sv = pca.singular_values_
 
 # Fit model to data using SSR-2D-PCA
 scale = 40
-# ssr2dpca = SSRR2DPCA(n_components_x=r, n_components_y=c)
-# X_r_ssr2dpca = ssr2dpca.fit_transform(images_2d)
-# ssr2dpca_pc = ssr2dpca.components_
-# ssr2dpca_var = ssr2dpca.explained_variance_
-# ssr2dpca_s = ssr2dpca.singular_values_
 ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale)
 
 # Plot and compare results

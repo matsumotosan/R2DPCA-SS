@@ -10,9 +10,10 @@ import spams
 from scipy.linalg import eigh
 from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
+from tempfile import TemporaryFile
 
 
-def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=20):
+def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=20, array_fname=None):
     """Iterative bi-directional decomposition.
 
     Step 1 of the two-stage alternating minimization algorithm for the
@@ -80,20 +81,32 @@ def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=20):
         V = eigvec_v[:, :c]
 
         # Check convergence
-        loss = calc_UV_change(U, V, U_old, V_old)
-        pbar.set_postfix({"Loss: ": loss})
+        res_U = calc_residual(U, U_old, relative=True)
+        res_V = calc_residual(V, V_old, relative=True)
+        pbar.set_postfix({"Residuals (U,V):": [res_U, res_V]})
 
-        if loss < tol:
+        if res_U < tol and res_V < tol:
             print("Converged at iteration {}".format(ii + 1))
+
+            # Option to save U and V
+            if array_fname is not None:
+                print("Saving arrays U and V...")
+                np.savez(array_fname, U=U, V=V)
+
             return U, V
 
     print("Finished {} iterations. Did not converge.".format(max_iter))
     print("")
 
+    # Option to save U and V
+    if array_fname is not None:
+        print("Saving arrays U and V...")
+        np.savez(array_fname, U=U, V=V)
+
     return U, V
 
 
-def feature_outlier_extractor(X, U, V, E, tol, max_iter):
+def feature_outlier_extractor(X, U, V, E, tol=1.0, max_iter=20, array_fname=None):
     """Feature matrix and structured outlier extraction.
 
     Step 2 of the two-stage alternating minimization algorithm for the
@@ -128,52 +141,64 @@ def feature_outlier_extractor(X, U, V, E, tol, max_iter):
     E : array, shape (n_samples, m, n)
         Structured sparse outliers matrix
     """
-    _, m, n = X.shape()
+    n_samples, m, n = X.shape
     pbar = tqdm(range(max_iter))
     for ii in pbar:
 
         # Save previous estimates to calculate change
-        S_old = S
         E_old = E
 
         # Bi-directional projection
-        # TODO: Calculate S using einsum
-        # S = np.einsum()
-        S = U.T.dot((X - E).dot(V))
+        S = np.einsum("ij,ljk->lik", U.T, (X - E).dot(V))
 
         # Proximal gradient method to solve structured sparsity regularized problem
-        # TODO: Initialize structured sparse matrix
         O = np.array([1])  # 3x3 neighboring grids
-        for i, s in enumerate(S):
-            # TODO: Solve for e with proximal method
-            e = spams.proximalFlat(X - U.dot(s.dot(V.T)), regul="elastic-net")
-            E[i] = e.reshape((m, n))
+        YUSVT = (X - np.einsum("ij,ljk->lik", U, S.dot(V.T))).reshape(
+            (n_samples, m * n)
+        )
+        e = spams.proximalFlat(
+            YUSVT.T, lambda1=1.0, lambda2=1.0, regul="sparse-group-lasso-l2"
+        )
+        E = e.reshape((n_samples, m, n))
 
         # Check convergence
-        loss = calc_SE_change(S, E, S_old, E_old)
-        pbar.set_postfix({"Loss: ": loss})
+        # res_S = calc_residual(S, S_old)
+        res_S = 0
+        res_E = calc_residual(E, E_old)
+        pbar.set_postfix({"Residuals (S,E):": [res_S, res_E]})
 
-        if loss < tol:
+        if res_S < tol and res_E < tol:
             print("Converged at iteration {}".format(ii + 1))
+
+            # Option to save S and E
+            if array_fname is not None:
+                print("Saving arrays S and E...")
+                np.savez(array_fname, S=S, E=E)
+
             return S, E
 
     print("Finished {} iterations. Did not converge.".format(max_iter))
     print("")
 
+    # Option to save S and E
+    if array_fname is not None:
+        print("Saving arrays S and E...")
+        np.savez(array_fname, S=S, E=E)
+
     return S, E
 
 
-def calc_UV_change(U, V, U_old, V_old):
-    # TODO: Implement residual calculator for U V
-    return 0
+def calc_residual(Y, Y1, relative=True):
+    if Y.shape == Y1.shape and Y.ndim > 2:
+        Y = Y.reshape((Y.shape[0], -1))
+        Y1 = Y1.reshape((Y1.shape[0], -1))
+    if relative:
+        return np.linalg.norm(Y - Y1, ord="fro") / np.linalg.norm(Y, ord="fro")
+    else:
+        return np.linalg.norm(Y - Y1, ord="fro")
 
 
-def calc_SE_change(S, E, S_old, E_old):
-    # TODO: Implement residual calculator for S E
-    return 0
-
-
-def ssrr2dpca(X, scale):
+def ssrr2dpca(X, scale, UV_file=None):
     """Structured sparsity regularized robust 2D principal component
     analysis (SSR-R2D-PCA).
     """
@@ -192,19 +217,25 @@ def ssrr2dpca(X, scale):
     r = int(m / scale)
     c = int(n / scale)
 
-    # Initialize projection and structured sparse matrices
-    U = np.vstack((np.eye(r, r), np.zeros((m - r, r))))  # shape(U) = (m,r)
-    V = np.vstack((np.eye(c, c), np.zeros((n - c, c))))  # shape(V) = (n,c)
     E = np.tile((np.zeros((1, m, n))), (T, 1, 1))
 
     # Get left and right projection matrices
     l = 1 / np.sqrt(m * n)
-    print("Calculating iterative bi-directional decomposition...")
-    U, V = iterBDD(X, E, U, V, r, c)
+    if UV_file is not None:
+        print("Loading U and V from {}...".format(UV_file))
+        npzfile = np.load(UV_file)
+        U = npzfile["U"]
+        V = npzfile["V"]
+    else:
+        print("Calculating iterative bi-directional decomposition...")
+        # Initialize projection and structured sparse matrices
+        U = np.vstack((np.eye(r, r), np.zeros((m - r, r))))  # shape(U) = (m,r)
+        V = np.vstack((np.eye(c, c), np.zeros((n - c, c))))  # shape(V) = (n,c)
+        U, V = iterBDD(X, E, U, V, r, c)
 
     # Get feature matrix and structured outliers
     print("Performing feature matrix and structured outlier extraction...")
-    S, E = feature_outlier_extractor(X, U, V, tol=1e-3)
+    S, E = feature_outlier_extractor(X, U, V, E)
 
     return U, V, S, E
 

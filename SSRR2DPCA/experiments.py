@@ -10,18 +10,7 @@ from sklearn.decomposition import PCA, SparsePCA
 from PIL import Image
 from SSRR2DPCA import SSRR2DPCA, ssrr2dpca
 from plotter import *
-
-
-def psnr(X, Xhat):
-    """Calculate PSNR"""
-    m, n = X.shape()
-    return 10 * np.log((255 ** 2 * m * n) / (np.linalg.norm(X - Xhat, ord="fro") ** 2))
-
-
-def ssim():
-    """Calculate SSIM"""
-    # TODO : Calculate SSIM
-    return None
+from metrics import psnr, ssim
 
 
 # Load data
@@ -41,19 +30,16 @@ pca_pc = pca.components_
 pca_evr = pca.explained_variance_ratio_
 pca_sv = pca.singular_values_
 
-# # Fit model to data using sparse PCA
-# spca = SparsePCA(n_components=n_components)
-# X_r_spca = spca.fit_transform(images_1d)
-# spca_pc = spca.components_
-# spca_var = spca.explained_variance_
-# spca_sv = spca.singular_values_
-
-# Fit model to data using SSR-2D-PCA
-scale = 40
-ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale)
-
 # Plot and compare results
 plot_singular_values(pca_sv, "pca_sv.png", "Singular Values for PCA")
 plot_explained_variance_ratio(
     pca_evr, "pca_evr.png", "Explained Variance Ratio for PCA"
 )
+
+# Fit model to data using SSR-2D-PCA
+scale = 40
+ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale, UV_file="./cache/UV.npz")
+
+# Visualize principal components
+plt.imshow(ssrU[0])
+plt.show()

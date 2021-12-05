@@ -132,3 +132,5 @@ dmypy.json
 
 datasets/yalefaces/
 datasets/yalefaces_extended/
+
+.vscode/

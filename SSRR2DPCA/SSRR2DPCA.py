@@ -5,6 +5,7 @@
 #          Marcus König      <marcusko@umich.edu>
 #          Yaning Zhang      <yaningzh@umich.edu>
 
+import pdb
 import numpy as np
 import spams
 from scipy.linalg import eigh
@@ -12,7 +13,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
 
 
-def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=20, array_fname=None):
+def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=200, array_fname=None):
     """Iterative bi-directional decomposition.
 
     Step 1 of the two-stage alternating minimization algorithm for the
@@ -56,6 +57,14 @@ def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=20, array_fname=None):
         Final right projection matrix
     """
     pbar = tqdm(range(max_iter))
+
+    # Dimensions of data
+    n_samples, m, n = X.shape
+
+    # Calculate (Xi - Ei)
+    XE = X - E
+
+    # Update U and V iteratively
     for ii in pbar:
 
         # Save previous estimates to calculate change
@@ -63,16 +72,12 @@ def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=20, array_fname=None):
         V_old = V
 
         # Eigendecomposition of Cv
-        VVT = V.dot(V.T)
-        XE = X - E
-        Cv = np.einsum("ij,lkj->lik", VVT, XE)
-        Cv = np.mean(np.einsum("ijk,ikl->ijl", XE, Cv), axis=0)
+        Cv = np.mean([np.cov(x, bias=True) for x in XE.dot(V)], axis=0)
         _, eigvec_u = eigh(Cv)
 
         # Eigendecomposition of Cu
-        UUT = U.dot(U.T)
-        Cu = np.einsum("ij,ljk->lik", UUT, XE)
-        Cu = np.mean(np.einsum("ikj,ikl->ijl", XE, Cu), axis=0)
+        XET = XE.reshape((n_samples, n, m))
+        Cu = np.mean([np.cov(x, bias=True) for x in XET.dot(U)], axis=0)
         _, eigvec_v = eigh(Cu)
 
         # Update U and V

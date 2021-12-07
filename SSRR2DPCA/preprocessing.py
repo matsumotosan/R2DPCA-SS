@@ -47,7 +47,11 @@ block_size = [10, 10]
 for i, im in enumerate(images):
     # Salt and pepper
     image_snp = skimage.util.random_noise(im, mode="s&p", amount=amount)
+
+    # Save to cache
     np.save("./cache/yalefaces_{}_snp_{}.npy".format(i, amount), image_snp)
+
+    # Plot and save image with S&P
     plt.imshow(image_snp, cmap="gray")
     plt.savefig(
         "./figures/snp/yalefaces_{}_snp_{}.png".format(i, amount),

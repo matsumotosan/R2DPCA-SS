@@ -56,8 +56,8 @@ plt.show()
 
 # Fit model to data using SSR-2D-PCA
 scale = 40
-ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale, UV_file="./cache/UV.npz")
-
+# ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale, UV_file="./cache/UV.npz")
+ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale)
 # Reconstruct
 X_transformed_ssrr2dpca = np.einsum("ij,ljk->lik", ssrU, ssrS.dot(ssrV.T)) - ssrE
 

@@ -2,7 +2,7 @@
 
 # Authors: Shion Matsumoto   <matsumos@umich.edu>
 #          Rohan Sinha Varma <rsvarma@umich.edu>
-#          Marcus Koenig     <marcusko@umich.edu>
+#          Marcus König      <marcusko@umich.edu>
 #          Yaning Zhang      <yaningzh@umich.edu>
 
 import numpy as np
@@ -10,7 +10,6 @@ import spams
 from scipy.linalg import eigh
 from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
-from tempfile import TemporaryFile
 
 
 def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=20, array_fname=None):
@@ -143,6 +142,18 @@ def feature_outlier_extractor(X, U, V, E, tol=1.0, max_iter=20, array_fname=None
     """
     n_samples, m, n = X.shape
     pbar = tqdm(range(max_iter))
+
+    # Set parameters for proximalFlat method
+    lambda2 = 1 / np.sqrt(m * n)  # l1-norm parameter
+    lambda1 = lambda2  # sparsity-inducing norm group parameter
+    groups = create_groups(m, n, ravel=True)
+    param = {
+        "lambda1": lambda1,
+        "lambda2": lambda2,
+        "groups": groups,
+        "regul": "sparse-group-lasso-l2",
+    }
+
     for ii in pbar:
 
         # Save previous estimates to calculate change
@@ -151,22 +162,23 @@ def feature_outlier_extractor(X, U, V, E, tol=1.0, max_iter=20, array_fname=None
         # Bi-directional projection
         S = np.einsum("ij,ljk->lik", U.T, (X - E).dot(V))
 
-        # Proximal gradient method to solve structured sparsity regularized problem
-        O = np.array([1])  # 3x3 neighboring grids
+        # Calculate input signal and reshape each sample into a column vector
         YUSVT = (X - np.einsum("ij,ljk->lik", U, S.dot(V.T))).reshape(
             (n_samples, m * n)
         )
-        e = spams.proximalFlat(
-            YUSVT.T, lambda1=1.0, lambda2=1.0, regul="sparse-group-lasso-l2"
-        )
+
+        # Proximal gradient method to solve structured sparsity regularized problem
+        e = spams.proximalFlat(YUSVT.T, **param)
+
+        # Reshape sparse outliers term
         E = e.reshape((n_samples, m, n))
 
-        # Check convergence
-        # res_S = calc_residual(S, S_old)
+        # Calculate residuals
         res_S = 0
         res_E = calc_residual(E, E_old)
         pbar.set_postfix({"Residuals (S,E):": [res_S, res_E]})
 
+        # Check convergence
         if res_S < tol and res_E < tol:
             print("Converged at iteration {}".format(ii + 1))
 
@@ -188,7 +200,36 @@ def feature_outlier_extractor(X, U, V, E, tol=1.0, max_iter=20, array_fname=None
     return S, E
 
 
+def create_groups(m, n, ravel=True):
+    """Create indices for 3-by-3 grids to specify group structure for structured sparsity regularization"""
+    indices = np.array(
+        [
+            [
+                [i - 1, j - 1],
+                [i - 1, j],
+                [i - 1, j + 1],
+                [i, j - 1],
+                [i, j],
+                [i, j + 1],
+                [i + 1, j - 1],
+                [i + 1, j],
+                [i + 1, j + 1],
+            ]
+            for i in range(1, m - 1)
+            for j in range(1, n - 1)
+        ]
+    )
+    if ravel:
+        indices_raveled = np.array(
+            [np.ravel_multi_index(idx_list.T, (m, n)) for idx_list in indices]
+        )
+        return indices_raveled
+    else:
+        return indices
+
+
 def calc_residual(Y, Y1, relative=True):
+    """Calculate residual"""
     if Y.shape == Y1.shape and Y.ndim > 2:
         Y = Y.reshape((Y.shape[0], -1))
         Y1 = Y1.reshape((Y1.shape[0], -1))

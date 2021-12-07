@@ -134,3 +134,7 @@ datasets/yalefaces/
 datasets/yalefaces_extended/
 
 .vscode/
+
+cache/
+
+figures/

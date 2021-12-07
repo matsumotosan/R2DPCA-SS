@@ -4,7 +4,14 @@ import glob
 import numpy as np
 import random
 import matplotlib.pyplot as plt
+import skimage
 from PIL import Image
+
+
+def occlude(im, block_size):
+    m, n = im.shape
+    return None
+
 
 # Load data
 image_dir = "./datasets/yalefaces/subject*.*"
@@ -28,7 +35,34 @@ fig.tight_layout()
 plt.savefig("./figures/yalefaces.png", bbox_inces="tight", dpi=200)
 plt.show()
 
+# Paramters for generating corrupted images (s&p)
+mean = 0
+var = 0.01
+amount = 0.05
+
+# Paramters for generating corrupted images (occlusion)
+block_size = [10, 10]
+
 # Generate corrupted images
+for i, im in enumerate(images):
+    # Salt and pepper
+    image_snp = skimage.util.random_noise(im, mode="s&p", amount=amount)
+    np.save("./cache/yalefaces_{}_snp_{}.npy".format(i, amount), image_snp)
+    plt.imshow(image_snp, cmap="gray")
+    plt.savefig(
+        "./figures/snp/yalefaces_{}_snp_{}.png".format(i, amount),
+        bbox_inces="tight",
+        dpi=200,
+    )
+
+    # Occlusion
+    # image_blocked = occlude(im, block_size)
+    # plt.savefig(
+    #     "./figures/occlude/yalefaces_occlude_{}.png".format(i),
+    #     bbox_inces="tight",
+    #     dpi=200,
+    # )
+
 # TODO : Function to generate images with uniform occlusions (pixels black or white)
 # TODO : Function to generate images with white noise
 # TODO : Generate occluded images to be used in experiments

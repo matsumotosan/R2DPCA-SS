@@ -13,7 +13,7 @@ from sklearn.preprocessing import MinMaxScaler
 from tqdm import tqdm
 
 
-def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=200, array_fname=None):
+def iterBDD(X, E, U, V, r, c, tol=1e-12, max_iter=200, array_fname=None):
     """Iterative bi-directional decomposition.
 
     Step 1 of the two-stage alternating minimization algorithm for the
@@ -71,22 +71,28 @@ def iterBDD(X, E, U, V, r, c, tol=1.0, max_iter=200, array_fname=None):
         U_old = U
         V_old = V
 
+        # pdb.set_trace()
         # Eigendecomposition of Cv
-        Cv = np.mean([np.cov(x, bias=True) for x in XE.dot(V)], axis=0)
+        Cv = np.mean([x @ x.T for x in XE.dot(V)], axis=0)
         _, eigvec_u = eigh(Cv)
+        eigvec_u = np.fliplr(eigvec_u)
 
         # Eigendecomposition of Cu
         XET = XE.reshape((n_samples, n, m))
-        Cu = np.mean([np.cov(x, bias=True) for x in XET.dot(U)], axis=0)
+        Cu = np.mean([x @ x.T for x in XET.dot(U)], axis=0)
         _, eigvec_v = eigh(Cu)
+        eigvec_v = np.fliplr(eigvec_v)
 
         # Update U and V
-        U = eigvec_u[:, :r]
+        U = eigvec_u[
+            :,
+            :r,
+        ]
         V = eigvec_v[:, :c]
 
         # Check convergence
-        res_U = calc_residual(U, U_old, relative=True)
-        res_V = calc_residual(V, V_old, relative=True)
+        res_U = calc_residual(U, U_old, relative=False)
+        res_V = calc_residual(V, V_old, relative=False)
         pbar.set_postfix({"Residuals (U,V):": [res_U, res_V]})
 
         if res_U < tol and res_V < tol:
@@ -155,7 +161,8 @@ def feature_outlier_extractor(X, U, V, E, tol=1.0, max_iter=20, array_fname=None
     param = {
         "lambda1": lambda1,
         "lambda2": lambda2,
-        "groups": groups,
+        # "groups": groups,
+        "size_group": 3,
         "regul": "sparse-group-lasso-l2",
     }
 
@@ -165,15 +172,15 @@ def feature_outlier_extractor(X, U, V, E, tol=1.0, max_iter=20, array_fname=None
         E_old = E
 
         # Bi-directional projection
-        S = np.einsum("ij,ljk->lik", U.T, (X - E).dot(V))
+        S = np.array([U.T @ x @ V for x in X - E])
 
         # Calculate input signal and reshape each sample into a column vector
-        YUSVT = (X - np.einsum("ij,ljk->lik", U, S.dot(V.T))).reshape(
-            (n_samples, m * n)
-        )
+        YUSVT = np.array([x - U @ s @ V.T for x, s in zip(X, S)])
+        YUSVT = YUSVT.reshape((n_samples, m * n))
 
+        # pdb.set_trace()
         # Proximal gradient method to solve structured sparsity regularized problem
-        e = spams.proximalFlat(YUSVT.T, **param)
+        e = spams.proximalFlat(np.asfortranarray(YUSVT), **param)
 
         # Reshape sparse outliers term
         E = e.reshape((n_samples, m, n))

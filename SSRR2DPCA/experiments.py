@@ -10,8 +10,7 @@ from sklearn.decomposition import PCA, SparsePCA
 from PIL import Image
 from SSRR2DPCA import SSRR2DPCA, ssrr2dpca
 from plotter import *
-from metrics import psnr, ssim
-import pdb
+from metrics import mse, psnr, ssim
 
 # Load data
 image_dir = "./datasets/yalefaces/subject*.*"

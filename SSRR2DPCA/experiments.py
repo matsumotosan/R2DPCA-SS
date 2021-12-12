@@ -6,76 +6,161 @@ import glob
 import numpy as np
 import random
 import matplotlib.pyplot as plt
-from sklearn.decomposition import PCA, SparsePCA
+from sklearn.decomposition import PCA
+from sklearn.datasets import fetch_olivetti_faces
 from PIL import Image
-from SSRR2DPCA import SSRR2DPCA, ssrr2dpca
+from SSRR2DPCA import SSRR2DPCA, ssrr2dpca, reconstruct
 from plotter import *
-from metrics import mse, psnr, ssim
+from metrics import calc_metrics
+from datasetrun import draw_random_black_occlusion
 
-# Load data
+# ##########
+# Load data - Yale Face Database
 image_dir = "./datasets/yalefaces/subject*.*"
 files = glob.glob(image_dir)
-images = np.asarray([np.asarray(Image.open(f)) for f in files])
-# pdb.set_trace()
-n_images, m, n = np.shape(images)
+faces = np.asarray([np.asarray(Image.open(f)) for f in files]).astype(float)
+n_samples, m, n = np.shape(faces)
 
-# # Vectorize images for PCA
-# images_1d = images.reshape((n_images, m * n))  # vectorize for PCA
+# #################################################################
+# Load data - AT&T Faces
+# faces, _ = fetch_olivetti_faces(return_X_y=True)
+# n_samples, n_features = faces.shape
+# faces -= faces.mean(axis=0)
+# # faces_centered = faces - faces.mean(axis=0)
+# # faces_centered -= faces_centered.mean(axis=1).reshape(n_samples, -1)
+# print("AT&T Faces dataset consists of %d faces" % n_samples)
+# m, n = 64, 64
 
-# # Fit model to data using PCA
-# n_components = 20
-# pca = PCA(n_components=n_components)
-# X_transformed_pca = pca.fit_transform(images_1d)
-# pca_pc = pca.components_
-# pca_evr = pca.explained_variance_ratio_
-# pca_sv = pca.singular_values_
+# #################################################################
+# Generate occluded face images
+corrupted_faces = np.copy(faces.reshape((n_samples, m, n)))
+corrupted_samples = 0.2
+noise_percentage = 0.3
+idx2corrupt = np.random.choice(
+    range(n_samples), int(corrupted_samples * n_samples), replace=False
+)
+for ii in idx2corrupt:
+    corrupted_faces[ii] = draw_random_black_occlusion(
+        corrupted_faces[ii], noise_percentage
+    )
 
-# # Plot singular values and explained variance ratio for PCA
-# plot_singular_values(pca_sv, "pca_sv.png", "Singular Values for PCA")
-# plot_explained_variance_ratio(
-#     pca_evr, "pca_evr.png", "Explained Variance Ratio for PCA"
-# )
-
-# # Plot reconstructed images using PCA
-# rand_idx = np.random.choice(np.arange(n_images), 10)
+# # Plot corrupted image examples
 # fig, axs = plt.subplots(
-#     nrows=2, ncols=5, figsize=(10, 4), subplot_kw={"xticks": [], "yticks": []}
+#     nrows=1,
+#     ncols=5,
+#     figsize=(8, 2),
+#     subplot_kw={"xticks": [], "yticks": []},
 # )
-# axs = axs.reshape(-1)
-# for i, idx in enumerate(rand_idx):
-#     axs[i].imshow(
-#         pca.inverse_transform(X_transformed_pca[idx]).reshape((m, n)), cmap="gray"
-#     )
-#     axs[i].set_title(str(idx))
+# for i, idx in enumerate(np.random.choice(idx2corrupt, 5)):
+#     axs[i].imshow(corrupted_faces[idx], cmap="gray")
 
-# plt.suptitle("Reconstructions with PCA (n_pcs={})".format(n_components))
-# plt.savefig(
-#     "./figures/recon_pca_{}.png".format(n_components), bbox_inches="tight", dpi=200
-# )
+# plt.savefig("./figures/corrupted_images.png", bbox_inches="tight", dpi=200)
 # plt.show()
 
+# #################################################################
+# Fit model to data using PCA with various n_pcs
+n_components = np.arange(5, 80, 5)
+mse_pca_avg = []
+psnr_pca_avg = []
+ssim_pca_avg = []
+pca_recon_all = []
+
+for n_pc in n_components:
+    pca = PCA(n_components=n_pc)
+    X_transformed_pca = pca.fit_transform(corrupted_faces.reshape((n_samples, m * n)))
+    pca_pc, pca_evr, pca_sv = (
+        pca.components_,
+        pca.explained_variance_ratio_,
+        pca.singular_values_,
+    )
+
+    # Reconstruct images using PCA
+    pca_recon = pca.inverse_transform(X_transformed_pca).reshape((n_samples, m, n))
+
+    # Calculate metrics for PCA
+    mse_pca, psnr_pca, ssim_pca = calc_metrics(
+        faces.reshape((n_samples, m, n)), pca_recon
+    )
+
+    # Append average MSE, PSNR, SSIM
+    mse_pca_avg.append(np.mean(mse_pca))
+    psnr_pca_avg.append(np.mean(psnr_pca))
+    ssim_pca_avg.append(np.mean(ssim_pca))
+
+    # Append reconstructions
+    pca_recon_all.append(pca_recon)
+
+# Plot reconstructions with various numbers of PCs
+face_indices = np.random.choice(idx2corrupt, size=5, replace=False)
+pc_indices = np.arange(0, len(n_components), 4)
+plot_reconstructions(
+    faces.reshape((n_samples, m, n)),
+    corrupted_faces,
+    pca_recon_all,
+    face_indices,
+    n_components,
+    pc_indices,
+    "PCA reconstruction",
+    "./figures/PCA_recon.png",
+)
+
+# #################################################################
 # Fit model to data using SSR-2D-PCA
-scale = 40
-# ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale, UV_file="./cache/UV.npz")
-ssrU, ssrV, ssrS, ssrE = ssrr2dpca(images, scale=scale)
-# Reconstruct
-X_transformed_ssrr2dpca = np.einsum("ij,ljk->lik", ssrU, ssrS.dot(ssrV.T)) - ssrE
+scale = [10, 15, 20]
 
-# Visualize principal components
-plt.figure(1)
-plt.imshow(X_transformed_ssrr2dpca[0], cmap="gray")
-# plt.show()
+mse_sr2pca_avg = []
+psnr_sr2pca_avg = []
+ssim_sr2pca_avg = []
+sr2pca_recon_all = []
+sr2pca_E_all = []
+npcs_sr2pca = []
 
-plt.figure(2)
-plt.imshow(images[0], cmap="gray")
-# plt.show()
+for i, s in enumerate(scale):
+    ssrU, ssrV, ssrS, ssrE = ssrr2dpca(corrupted_faces, scale=s)
+    sr2pca_recon = reconstruct(ssrU, ssrV, ssrS, ssrE)
 
-plt.figure(3)
-plt.imshow(ssrE[0], cmap="gray")
-# plt.show()
+    # Calculate metrics for SSR-R2D-PCA
+    mse_sr2pca, psnr_sr2pca, ssim_sr2pca = calc_metrics(
+        faces.reshape((n_samples, m, n)), sr2pca_recon
+    )
 
-plt.figure(4)
-plt.imshow(X_transformed_ssrr2dpca[0] + ssrE[0], cmap="gray")
-plt.show()
+    # Append stats
+    mse_sr2pca_avg.append(np.mean(mse_sr2pca))
+    psnr_sr2pca_avg.append(np.mean(psnr_sr2pca))
+    ssim_sr2pca_avg.append(np.mean(ssim_sr2pca))
+    npcs_sr2pca.append(ssrU.shape[1] + ssrV.shape[1])
 
-# Visualize reconstructed images
+    # Append reconstructions
+    sr2pca_recon_all.append(sr2pca_recon)
+    sr2pca_E_all.append(ssrE)
+
+# Plot reconstructions from SR2PCA
+plot_reconstructions(
+    faces.reshape((n_samples, m, n)),
+    corrupted_faces,
+    sr2pca_recon_all,
+    face_indices,
+    npcs_sr2pca,
+    np.array(np.arange(len(scale))),
+    "SSR-R2D-PCA reconstruction",
+    "./figures/ssrr2dpca_recon_{}.png".format(scale),
+    outlier_matrix=sr2pca_E_all,
+)
+
+# #################################################################
+# Plot metrics
+plot_metrics(
+    mse_pca_avg,
+    psnr_pca_avg,
+    ssim_pca_avg,
+    n_components,
+    "./figures/metrics_pca.png",
+)
+
+plot_metrics(
+    mse_sr2pca_avg,
+    psnr_sr2pca_avg,
+    ssim_sr2pca_avg,
+    npcs_sr2pca,
+    "./figures/metrics_sr2pca.png",
+)

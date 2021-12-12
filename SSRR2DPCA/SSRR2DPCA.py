@@ -293,6 +293,28 @@ def ssrr2dpca(X, scale, UV_file=None):
     return U, V, S, E
 
 
+def reconstruct(U, V, S, E):
+    """Reconstruct using decomposition
+
+    Xi = U @ Si @ V.T
+
+    Parameters
+    ----------
+    U : array, shape (m, r)
+
+    S : array, shape (n_samples, r, c)
+
+    V : array, shape (n, c)
+
+    Returns
+    -------
+    recon : array, shape (n_samples, m, n)
+    """
+    # recon = np.einsum("ij,ljk->lik", U, S.dot(V.T)) + E
+    recon = np.array([U.dot(Si.dot(V.T)) for Si in S])
+    return recon
+
+
 class SSRR2DPCA:
     """Structured sparsity regularized robust 2D principal component
     analysis (SSR-R2D-PCA).

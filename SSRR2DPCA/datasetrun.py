@@ -34,27 +34,17 @@ def draw_random_black_occlusion(img, percentage):
     return out_img
 
 
-# takes the noisy image and denoises it
-def reconstruct_img(noisy_img):
-    # function call to algorithm
-
-    # replace noisy_img with reconstructed image
-    output_img = noisy_img
-
-    return output_img
-
-
-faces = datasets.fetch_olivetti_faces()
-noise_percentage = 0.2
-mse_losses = []
-psnr_losses = []
-ssim_losses = []
-for img in faces.images:
-    noisy_img = draw_random_black_occlusion(img, noise_percentage)
-    reco_img = reconstruct_img(noisy_img)
-    psnr_losses.append(peak_signal_noise_ratio(img, reco_img))
-    ssim_losses.append(structural_similarity(img, reco_img))
-    mse_losses.append(mean_squared_error(img, reco_img))
-print(np.mean(psnr_losses))
-print(np.mean(ssim_losses))
-print(np.mean(mse_losses))
+# faces = datasets.fetch_olivetti_faces()
+# noise_percentage = 0.2
+# mse_losses = []
+# psnr_losses = []
+# ssim_losses = []
+# for img in faces.images:
+#     noisy_img = draw_random_black_occlusion(img, noise_percentage)
+#     # reco_img = reconstruct_img(noisy_img)
+#     psnr_losses.append(peak_signal_noise_ratio(img, reco_img))
+#     ssim_losses.append(structural_similarity(img, reco_img))
+#     mse_losses.append(mean_squared_error(img, reco_img))
+# print(np.mean(psnr_losses))
+# print(np.mean(ssim_losses))
+# print(np.mean(mse_losses))
